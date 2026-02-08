@@ -1,0 +1,550 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Roguelike Tic-Tac-Toe</title>
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body>
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState, useEffect } = React;
+
+        const BOARD_SIZE = 20;
+        const WIN_LENGTH = 4;
+
+        const CARDS = [
+          { id: 1, name: 'Time Reversal I', description: 'Reverse previous turn by 1', effect: 'reverse', amount: 1 },
+          { id: 2, name: 'Time Reversal II', description: 'Reverse previous turn by 2', effect: 'reverse', amount: 2 },
+          { id: 3, name: 'Time Reversal III', description: 'Reverse previous turn by 3', effect: 'reverse', amount: 3 },
+          { id: 4, name: 'Time Reversal IV', description: 'Reverse previous turn by 4', effect: 'reverse', amount: 4 },
+          { id: 5, name: 'Skip Turn', description: 'Opponent will lose a turn', effect: 'skip' },
+          { id: 6, name: 'Mass Conversion', description: 'Flip ALL dots', effect: 'flipAll' },
+          { id: 7, name: 'Chaos Flip', description: 'Flip random dots', effect: 'flipRandom', amount: 'random' },
+          { id: 8, name: 'Precision Flip I', description: 'Flip 1 random dot (non-adjacent)', effect: 'flipRandom', amount: 1 },
+          { id: 9, name: 'Precision Flip II', description: 'Flip 2 random dots (non-adjacent)', effect: 'flipRandom', amount: 2 },
+          { id: 10, name: 'Precision Flip III', description: 'Flip 3 random dots (non-adjacent)', effect: 'flipRandom', amount: 3 },
+        ];
+
+        function RoguelikeTicTacToe() {
+          const [board, setBoard] = useState(() => Array(BOARD_SIZE).fill(null).map(() => Array(BOARD_SIZE).fill(null)));
+          const [history, setHistory] = useState([]);
+          const [currentPlayer, setCurrentPlayer] = useState('player');
+          const [selectedCards, setSelectedCards] = useState([]);
+          const [cardPhase, setCardPhase] = useState(false);
+          const [selectedCard, setSelectedCard] = useState(null);
+          const [winner, setWinner] = useState(null);
+          const [skipNextTurn, setSkipNextTurn] = useState(false);
+          const [message, setMessage] = useState('Click any cell to place your first dot!');
+          const [isFirstTurn, setIsFirstTurn] = useState(true);
+          const [aiIsMoving, setAiIsMoving] = useState(false);
+
+          useEffect(() => {
+            // Only show cards if: not in card phase, no winner, not first turn, AND no card selected yet
+            if (!cardPhase && !winner && !isFirstTurn && !selectedCard) {
+              const cards = getRandomCards();
+              setSelectedCards(cards);
+              setCardPhase(true);
+              setMessage('Select a card to play!');
+            }
+          }, [cardPhase, winner, isFirstTurn, selectedCard]);
+
+          useEffect(() => {
+            // Only trigger AI move when it becomes AI's turn and AI is not already moving
+            if (currentPlayer === 'ai' && !winner && !cardPhase && !aiIsMoving) {
+              const totalDots = board.flat().filter(cell => cell !== null).length;
+              const isAIFirstMove = totalDots === 1;
+              
+              if (selectedCard || isAIFirstMove) {
+                setAiIsMoving(true);
+                setTimeout(() => {
+                  makeAIMove();
+                }, 1000);
+              }
+            }
+          }, [currentPlayer, winner, cardPhase, aiIsMoving]);
+
+          const getRandomCards = () => {
+            // Count total dots on the board
+            const totalDots = board.flat().filter(cell => cell !== null).length;
+            
+            // Filter available cards based on turn count
+            // Cards 3 and 4 (reverse 3 and 4 turns) only appear after 7 total turns
+            let availableCards = CARDS;
+            if (totalDots < 7) {
+              availableCards = CARDS.filter(card => card.id !== 3 && card.id !== 4);
+            }
+            
+            const shuffled = [...availableCards].sort(() => Math.random() - 0.5);
+            return [shuffled[0], shuffled[1]];
+          };
+
+          const applyCardEffect = (card, boardState) => {
+            let newBoard = boardState.map(row => [...row]);
+            let newHistory = [...history];
+            let effectMessage = '';
+
+            switch (card.effect) {
+              case 'reverse':
+                for (let i = 0; i < card.amount && newHistory.length > 0; i++) {
+                  newBoard = newHistory.pop();
+                }
+                setHistory(newHistory);
+                effectMessage = `Reversed ${card.amount} turn(s)!`;
+                break;
+
+              case 'skip':
+                setSkipNextTurn(true);
+                effectMessage = 'AI turn will be skipped - you go again!';
+                break;
+
+              case 'flipAll':
+                newBoard = newBoard.map(row => 
+                  row.map(cell => {
+                    if (cell === 'player') return 'ai';
+                    if (cell === 'ai') return 'player';
+                    return cell;
+                  })
+                );
+                effectMessage = 'All dots have been flipped!';
+                break;
+
+              case 'flipRandom':
+                const filledCells = [];
+                for (let r = 0; r < BOARD_SIZE; r++) {
+                  for (let c = 0; c < BOARD_SIZE; c++) {
+                    if (newBoard[r][c] !== null) {
+                      filledCells.push([r, c]);
+                    }
+                  }
+                }
+
+                let numToFlip = card.amount === 'random' 
+                  ? Math.floor(Math.random() * Math.min(filledCells.length, 10)) + 1
+                  : Math.min(card.amount, filledCells.length);
+
+                const toFlip = [];
+                const shuffledCells = [...filledCells].sort(() => Math.random() - 0.5);
+
+                for (let cell of shuffledCells) {
+                  if (toFlip.length >= numToFlip) break;
+                  
+                  const [r, c] = cell;
+                  const isAdjacent = toFlip.some(([fr, fc]) => 
+                    Math.abs(fr - r) <= 1 && Math.abs(fc - c) <= 1
+                  );
+
+                  if (!isAdjacent || card.amount === 'random') {
+                    toFlip.push(cell);
+                  }
+                }
+
+                toFlip.forEach(([r, c]) => {
+                  if (newBoard[r][c] === 'player') newBoard[r][c] = 'ai';
+                  else if (newBoard[r][c] === 'ai') newBoard[r][c] = 'player';
+                });
+
+                effectMessage = `Flipped ${toFlip.length} dot(s)!`;
+                break;
+            }
+
+            return { newBoard, effectMessage };
+          };
+
+          const handleCardSelect = (card) => {
+            setSelectedCard(card);
+            const { newBoard, effectMessage } = applyCardEffect(card, board);
+            setBoard(newBoard);
+            setCardPhase(false);
+            
+            const winner = checkWinner(newBoard);
+            if (winner) {
+              setWinner(winner);
+              setMessage(`${winner === 'player' ? 'You' : 'AI'} won!`);
+            } else {
+              setMessage(`${effectMessage} Now place your dot!`);
+            }
+          };
+
+          const handleSkipCard = () => {
+            setCardPhase(false);
+            setSelectedCard(true);
+            setMessage('Card skipped! Now place your dot!');
+          };
+
+          const handleCellClick = (row, col) => {
+            if (winner || cardPhase || board[row][col] !== null || currentPlayer === 'ai') return;
+
+            // First turn doesn't require a card, otherwise need a card selected or skipped
+            if (!isFirstTurn && !selectedCard) {
+              setMessage('Please select a card first!');
+              return;
+            }
+
+            const newHistory = [...history, board.map(row => [...row])];
+            setHistory(newHistory);
+
+            const newBoard = board.map(r => [...r]);
+            newBoard[row][col] = currentPlayer;
+            setBoard(newBoard);
+
+            const winner = checkWinner(newBoard);
+            if (winner) {
+              setWinner(winner);
+              setMessage(`${winner === 'player' ? 'You' : 'AI'} won!`);
+              return;
+            }
+
+            // After first turn, enable card phase
+            if (isFirstTurn) {
+              setIsFirstTurn(false);
+            }
+
+            if (skipNextTurn) {
+              setSkipNextTurn(false);
+              setMessage('AI turn skipped! Select your next card!');
+              setSelectedCard(null);
+              setCardPhase(true);
+            } else {
+              setCurrentPlayer('ai');
+              setMessage('AI is thinking...');
+            }
+          };
+
+          const makeAIMove = () => {
+            if (winner) {
+              setAiIsMoving(false);
+              return;
+            }
+
+            const emptyCells = [];
+            for (let r = 0; r < BOARD_SIZE; r++) {
+              for (let c = 0; c < BOARD_SIZE; c++) {
+                if (board[r][c] === null) {
+                  emptyCells.push([r, c]);
+                }
+              }
+            }
+
+            if (emptyCells.length === 0) {
+              setAiIsMoving(false);
+              return;
+            }
+
+            // Smart AI logic
+            let bestMove = null;
+
+            // Priority 1: Check if AI can win
+            bestMove = findWinningMove(board, 'ai');
+            
+            // Priority 2: Block player from winning
+            if (!bestMove) {
+              bestMove = findWinningMove(board, 'player');
+            }
+
+            // Priority 3: Look for spots that create threats (2 in a row)
+            if (!bestMove) {
+              bestMove = findThreatMove(board, 'ai');
+            }
+
+            // Priority 4: Block player's threats (2 in a row)
+            if (!bestMove) {
+              bestMove = findThreatMove(board, 'player');
+            }
+
+            // Priority 5: Place near existing dots for better positioning
+            if (!bestMove) {
+              bestMove = findNearbyMove(board, emptyCells);
+            }
+
+            // Fallback: Random move
+            if (!bestMove) {
+              bestMove = emptyCells[Math.floor(Math.random() * emptyCells.length)];
+            }
+
+            const [row, col] = bestMove;
+            
+            const newHistory = [...history, board.map(row => [...row])];
+            setHistory(newHistory);
+
+            const newBoard = board.map(r => [...r]);
+            newBoard[row][col] = 'ai';
+            setBoard(newBoard);
+
+            const winner = checkWinner(newBoard);
+            if (winner) {
+              setWinner(winner);
+              setMessage(`${winner === 'player' ? 'You' : 'AI'} won!`);
+              setAiIsMoving(false);
+              return;
+            }
+
+            setCurrentPlayer('player');
+            setSelectedCard(null);
+            setCardPhase(true);
+            setAiIsMoving(false);
+          };
+
+          // Find a move that would complete 4 in a row
+          const findWinningMove = (boardState, player) => {
+            const directions = [
+              [0, 1],   // horizontal
+              [1, 0],   // vertical
+              [1, 1],   // diagonal
+              [1, -1]   // anti-diagonal
+            ];
+
+            for (let r = 0; r < BOARD_SIZE; r++) {
+              for (let c = 0; c < BOARD_SIZE; c++) {
+                if (boardState[r][c] !== null) continue;
+
+                // Try placing a dot here
+                for (const [dr, dc] of directions) {
+                  let count = 1;
+                  
+                  // Check forward direction
+                  for (let i = 1; i < WIN_LENGTH; i++) {
+                    const nr = r + dr * i;
+                    const nc = c + dc * i;
+                    if (nr >= 0 && nr < BOARD_SIZE && nc >= 0 && nc < BOARD_SIZE && boardState[nr][nc] === player) {
+                      count++;
+                    } else {
+                      break;
+                    }
+                  }
+                  
+                  // Check backward direction
+                  for (let i = 1; i < WIN_LENGTH; i++) {
+                    const nr = r - dr * i;
+                    const nc = c - dc * i;
+                    if (nr >= 0 && nr < BOARD_SIZE && nc >= 0 && nc < BOARD_SIZE && boardState[nr][nc] === player) {
+                      count++;
+                    } else {
+                      break;
+                    }
+                  }
+                  
+                  if (count >= WIN_LENGTH) {
+                    return [r, c];
+                  }
+                }
+              }
+            }
+            return null;
+          };
+
+          // Find a move that creates or blocks a threat (2-3 in a row)
+          const findThreatMove = (boardState, player) => {
+            const directions = [
+              [0, 1],   // horizontal
+              [1, 0],   // vertical
+              [1, 1],   // diagonal
+              [1, -1]   // anti-diagonal
+            ];
+
+            for (let r = 0; r < BOARD_SIZE; r++) {
+              for (let c = 0; c < BOARD_SIZE; c++) {
+                if (boardState[r][c] !== null) continue;
+
+                for (const [dr, dc] of directions) {
+                  let count = 1;
+                  
+                  // Check forward
+                  for (let i = 1; i < WIN_LENGTH - 1; i++) {
+                    const nr = r + dr * i;
+                    const nc = c + dc * i;
+                    if (nr >= 0 && nr < BOARD_SIZE && nc >= 0 && nc < BOARD_SIZE && boardState[nr][nc] === player) {
+                      count++;
+                    } else {
+                      break;
+                    }
+                  }
+                  
+                  // Check backward
+                  for (let i = 1; i < WIN_LENGTH - 1; i++) {
+                    const nr = r - dr * i;
+                    const nc = c - dc * i;
+                    if (nr >= 0 && nr < BOARD_SIZE && nc >= 0 && nc < BOARD_SIZE && boardState[nr][nc] === player) {
+                      count++;
+                    } else {
+                      break;
+                    }
+                  }
+                  
+                  if (count >= 2) {
+                    return [r, c];
+                  }
+                }
+              }
+            }
+            return null;
+          };
+
+          // Find a move near existing dots
+          const findNearbyMove = (boardState, emptyCells) => {
+            const nearby = emptyCells.filter(([r, c]) => {
+              // Check if there's a dot within 2 spaces
+              for (let dr = -2; dr <= 2; dr++) {
+                for (let dc = -2; dc <= 2; dc++) {
+                  if (dr === 0 && dc === 0) continue;
+                  const nr = r + dr;
+                  const nc = c + dc;
+                  if (nr >= 0 && nr < BOARD_SIZE && nc >= 0 && nc < BOARD_SIZE && boardState[nr][nc] !== null) {
+                    return true;
+                  }
+                }
+              }
+              return false;
+            });
+            
+            if (nearby.length > 0) {
+              return nearby[Math.floor(Math.random() * nearby.length)];
+            }
+            return null;
+          };
+
+          const checkWinner = (boardState) => {
+            const directions = [
+              [0, 1],   // horizontal
+              [1, 0],   // vertical
+              [1, 1],   // diagonal
+              [1, -1]   // anti-diagonal
+            ];
+
+            for (let r = 0; r < BOARD_SIZE; r++) {
+              for (let c = 0; c < BOARD_SIZE; c++) {
+                const player = boardState[r][c];
+                if (!player) continue;
+
+                for (const [dr, dc] of directions) {
+                  let count = 1;
+                  for (let i = 1; i < WIN_LENGTH; i++) {
+                    const nr = r + dr * i;
+                    const nc = c + dc * i;
+                    if (nr >= 0 && nr < BOARD_SIZE && nc >= 0 && nc < BOARD_SIZE && boardState[nr][nc] === player) {
+                      count++;
+                    } else {
+                      break;
+                    }
+                  }
+                  if (count >= WIN_LENGTH) return player;
+                }
+              }
+            }
+            return null;
+          };
+
+          const resetGame = () => {
+            setBoard(Array(BOARD_SIZE).fill(null).map(() => Array(BOARD_SIZE).fill(null)));
+            setHistory([]);
+            setCurrentPlayer('player');
+            setSelectedCards([]);
+            setCardPhase(false);
+            setSelectedCard(null);
+            setWinner(null);
+            setSkipNextTurn(false);
+            setIsFirstTurn(true);
+            setAiIsMoving(false);
+            setMessage('Click any cell to place your first dot!');
+          };
+
+          return (
+            <div className="min-h-screen bg-gradient-to-br from-purple-900 via-blue-900 to-indigo-900 p-8">
+              <div className="max-w-7xl mx-auto">
+                <h1 className="text-5xl font-bold text-center text-white mb-2">Roguelike Tic-Tac-Toe</h1>
+                <p className="text-center text-purple-200 mb-6">Connect 4 on a 20×20 board with card powers!</p>
+                
+                <div className="bg-white/10 backdrop-blur-lg rounded-lg p-4 mb-6 text-center">
+                  <p className="text-2xl font-semibold text-white">{message}</p>
+                  {!winner && (
+                    <p className="text-lg text-purple-200 mt-2">
+                      Current Turn: {currentPlayer === 'player' ? '🔵 You' : '🔴 AI'}
+                    </p>
+                  )}
+                </div>
+
+                {cardPhase && !winner && (
+                  <div className="mb-6">
+                    <h2 className="text-2xl font-bold text-white text-center mb-4">Choose Your Card</h2>
+                    <div className="grid grid-cols-3 gap-4 max-w-4xl mx-auto">
+                      {selectedCards.map((card) => (
+                        <button
+                          key={card.id}
+                          onClick={() => handleCardSelect(card)}
+                          className="bg-gradient-to-br from-yellow-400 to-orange-500 p-6 rounded-xl shadow-lg hover:scale-105 transition-transform border-4 border-yellow-300"
+                        >
+                          <h3 className="text-xl font-bold text-purple-900 mb-2">{card.name}</h3>
+                          <p className="text-sm text-purple-800">{card.description}</p>
+                        </button>
+                      ))}
+                      <button
+                        onClick={handleSkipCard}
+                        className="bg-gradient-to-br from-gray-400 to-gray-600 p-6 rounded-xl shadow-lg hover:scale-105 transition-transform border-4 border-gray-300"
+                      >
+                        <h3 className="text-xl font-bold text-white mb-2">Skip Card</h3>
+                        <p className="text-sm text-gray-200">Don't use a card this turn</p>
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                <div className="flex justify-center mb-6">
+                  <div 
+                    className="inline-grid bg-white/20 backdrop-blur-sm p-4 rounded-lg shadow-2xl"
+                    style={{
+                      gridTemplateColumns: `repeat(${BOARD_SIZE}, minmax(0, 1fr))`,
+                      gap: '2px'
+                    }}
+                  >
+                    {board.map((row, rowIndex) => 
+                      row.map((cell, colIndex) => (
+                        <button
+                          key={`${rowIndex}-${colIndex}`}
+                          onClick={() => handleCellClick(rowIndex, colIndex)}
+                          className={`w-6 h-6 sm:w-7 sm:h-7 rounded-sm transition-all ${
+                            cell === 'player' 
+                              ? 'bg-blue-500 shadow-lg shadow-blue-500/50' 
+                              : cell === 'ai' 
+                              ? 'bg-red-500 shadow-lg shadow-red-500/50' 
+                              : 'bg-white/30 hover:bg-white/50'
+                          } ${!cardPhase && currentPlayer === 'player' && !cell && !winner ? 'cursor-pointer' : 'cursor-not-allowed'}`}
+                          disabled={winner || cardPhase || cell !== null || currentPlayer === 'ai'}
+                        />
+                      ))
+                    )}
+                  </div>
+                </div>
+
+                <div className="text-center">
+                  <button
+                    onClick={resetGame}
+                    className="bg-gradient-to-r from-green-400 to-emerald-500 text-white px-8 py-3 rounded-lg font-bold text-lg hover:scale-105 transition-transform shadow-lg"
+                  >
+                    New Game
+                  </button>
+                </div>
+
+                <div className="mt-8 bg-white/10 backdrop-blur-lg rounded-lg p-6">
+                  <h3 className="text-xl font-bold text-white mb-4">Game Rules</h3>
+                  <ul className="text-purple-200 space-y-2">
+                    <li>• Connect 4 dots in a row (horizontal, vertical, or diagonal) to win</li>
+                    <li>• Each turn, select one of two random cards before placing your dot (or skip)</li>
+                    <li>• Cards have powerful effects that can change the game!</li>
+                    <li>• Powerful reverse cards (3-4 turns) unlock after 7 total turns</li>
+                    <li>• You are 🔵 Blue, AI is 🔴 Red</li>
+                  </ul>
+                </div>
+              </div>
+            </div>
+          );
+        }
+
+        ReactDOM.render(<RoguelikeTicTacToe />, document.getElementById('root'));
+    </script>
+</body>
+</html>
